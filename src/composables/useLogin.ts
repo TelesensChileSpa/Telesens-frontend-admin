@@ -1,33 +1,40 @@
 import { ref } from 'vue';
-import { useAuthStore } from '~/stores/auth';  // Cambié el import para usar el store de Pinia
+import { useAuthStore } from '~/stores/auth';
 import { useRouter } from 'vue-router';
 
 export function useLogin({ redirectTo = '/users' } = {}) {
   const usuario = ref('');
   const contraseña = ref('');
+  const showPassword = ref(false);
   const isLoading = ref(false);
   const errorMessage = ref('');
-  const showPassword = ref(false);
 
-  const authStore = useAuthStore();  // Usamos el store para acceso a la autenticación
+  const authStore = useAuthStore();
   const router = useRouter();
 
+  let timeoutId: NodeJS.Timeout;
+
+  function mostrarError(mensaje: string) {
+    errorMessage.value = mensaje;
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => (errorMessage.value = ''), 5000);
+  }
+
   const handleLogin = async () => {
-    isLoading.value = true;
     errorMessage.value = '';
 
-    if (!usuario.value || !contraseña.value) {
-      errorMessage.value = 'Por favor, complete todos los campos.';
-      isLoading.value = false;
-      return;
-    }
-
     try {
-      // Llamamos al método login del store de Pinia
-      await authStore.login({ usuario: usuario.value, contraseña: contraseña.value });
-      router.push(redirectTo);
+      authStore.validarCredenciales(usuario.value, contraseña.value);
+      isLoading.value = true;
+
+      await authStore.login({
+        usuario: usuario.value,
+        contraseña: contraseña.value,
+      });
+
+      await router.push(redirectTo);
     } catch (error: any) {
-      errorMessage.value = error?.message || 'Credenciales incorrectas';
+      mostrarError(error.message);
     } finally {
       isLoading.value = false;
     }
@@ -39,6 +46,6 @@ export function useLogin({ redirectTo = '/users' } = {}) {
     showPassword,
     isLoading,
     errorMessage,
-    handleLogin
+    handleLogin,
   };
 }

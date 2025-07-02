@@ -1,50 +1,80 @@
-import { defineStore } from 'pinia'
-import { useCookie, useRuntimeConfig, navigateTo } from '#app'
-import { ref, computed, onMounted } from 'vue'
-
 export const useAuthStore = defineStore('auth', () => {
-  const config = useRuntimeConfig()
+  const config = useRuntimeConfig();
+
   const cookie = useCookie<string | null>('token', {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-  })
+  });
 
-  // Usamos ref para token, lo que permite la reactividad
-  const token = ref<string | null>(null)
+  const token = ref<string | null>(null);
 
-  // Computed para verificar si el usuario está autenticado
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = computed(() => !!token.value);
 
-  // Inicializar el token, asegurándonos de que solo se ejecute en el cliente
   onMounted(() => {
     if (process.client) {
-      token.value = cookie.value
+      token.value = cookie.value;
     }
-  })
+  });
 
-  // Función para manejar el login
   async function login(creds: { usuario: string; contraseña: string }) {
-    const API_URL = `${config.public.apiBase}/api`
-    const { accessToken } = await $fetch<{ accessToken: string }>(
-      `${API_URL}/auth/login`, { method: 'POST', body: creds, credentials: 'include' }
-    )
-    if (!accessToken) throw new Error('No token recibido')
-    token.value = accessToken
-    cookie.value = accessToken
-  }
+    const API_URL = `${config.public.apiBase}/api`;
 
-  // Función para manejar el logout
-  function logout() {
-    token.value = null
-    cookie.value = null
-    if (process.client) {
-      navigateTo('/login')
+    try {
+      const response = await $fetch<{ accessToken: string }>(
+        `${API_URL}/auth/login`,
+        {
+          method: 'POST',
+          body: creds,
+          credentials: 'include',
+        }
+      );
+
+      if (!response || !response.accessToken) {
+        throw new Error('No se recibió el token del servidor.');
+      }
+
+      token.value = response.accessToken;
+      cookie.value = response.accessToken;
+    } catch (error: any) {
+      if (error?.message?.includes('NetworkError') || error?.status === 0) {
+        throw new Error('No se pudo conectar al servidor.');
+      }
+      if (error?.status === 401) {
+        throw new Error('Usuario o contraseña incorrectos.');
+      } else if (error?.status === 400) {
+        throw new Error('Solicitud inválida. Revise los campos ingresados.');
+      } else if (error?.status === 500) {
+        throw new Error('Error interno del servidor. Intente más tarde.');
+      } else if (error?.message) {
+        throw new Error(error.message);
+      }
+
+      throw new Error('Ocurrió un error inesperado al iniciar sesión.');
     }
   }
 
-  // Este getter es útil si quieres saber si el token está listo para ser utilizado.
+  function validarCredenciales(usuario: string, contraseña: string) {
+    if (!usuario && !contraseña) {
+      throw new Error('Ingrese su usuario y contraseña.');
+    }
+    if (!usuario) {
+      throw new Error('Ingrese su usuario o correo.');
+    }
+    if (!contraseña) {
+      throw new Error('Ingrese su contraseña.');
+    }
+  }
+
+  function logout() {
+    token.value = null;
+    cookie.value = null;
+    if (process.client) {
+      navigateTo('/login');
+    }
+  }
+
   function getToken() {
-    return token.value
+    return token.value;
   }
 
   return {
@@ -52,6 +82,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     logout,
-    getToken,  // Agregado el getter
-  }
-})
+    getToken,
+    validarCredenciales,
+  };
+});
